@@ -1,86 +1,160 @@
+/**
+ * Growthcraft-1.10.2 build.gradle
+ */
 buildscript {
     repositories {
         mavenCentral()
+
         maven {
             name = "forge"
             url = "http://files.minecraftforge.net/maven"
         }
+
         maven {
             name = "sonatype"
             url = "https://oss.sonatype.org/content/repositories/snapshots/"
         }
     }
     dependencies {
-        classpath 'net.minecraftforge.gradle:ForgeGradle:2.2-SNAPSHOT'
+        classpath "net.minecraftforge.gradle:ForgeGradle:2.1-SNAPSHOT"
     }
 }
 
+apply plugin: "checkstyle"
 apply plugin: 'net.minecraftforge.gradle.forge'
-apply plugin: 'checkstyle'
 
-checkstyle {
-    toolVersion = "7.1.2"
-    configFile = new File(rootDir, "checkstyle/checkstyle.xml")
-}
+sourceCompatibility = JavaVersion.VERSION_1_7
+targetCompatibility = JavaVersion.VERSION_1_7
 
-version = "3.0.0-alpha"
-group= "mod.growthcraft"
+version = "${minecraft_version}-${growthcraft_version}"
+group = "growthcraft_ce"
 archivesBaseName = "growthcraft"
 
-sourceCompatibility = targetCompatibility = "1.8"
-compileJava {
-    sourceCompatibility = targetCompatibility = "1.8"
-}
+// APIs and so forth
+ext.growthcraftApi = "src/java/growthcraft/api"
+
+/// 3rd party APIs
+ext.thaumcraftApi = "api/thaumcraft/api"
+ext.thaumcraftApiExclusionPattern = "**/thaumcraft/api/**"
+
 
 minecraft {
-    version = "1.10.2-12.18.2.2099"
+    version = minecraft_forge_version
     runDir = "run"
-
-    replace "@VERSION@", project.version
-    replace "@GRC_MC_VERSION@", minecraft_version
-    replace "@GRC_VERSION@", growthcraft_version
 
     // the mappings can be changed at any time, and must be in the following format.
     // snapshot_YYYYMMDD   snapshot are built nightly.
     // stable_#            stables are built at the discretion of the MCP team.
     // Use non-default mappings at your own risk. they may not allways work.
     // simply re-run your setup task after changing the mappings to update your workspace.
-    mappings = "snapshot_20160518"
-    // makeObfSourceJar = false // an Srg named sources jar is made by default. uncomment this to disable.
+	// Ref: 
+    mappings = mcp_mappings_name
+
+    replace "@VERSION@", project.version
+    replace "@GRC_MC_VERSION@", minecraft_version
+    replace "@GRC_VERSION@", growthcraft_version
 }
 
 dependencies {
-    // you may put jars on which you depend on in ./libs
-    // or you may define them like so..
-    //compile "some.group:artifact:version:classifier"
-    //compile "some.group:artifact:version"
-      
-    // real examples
-    //compile 'com.mod-buildcraft:buildcraft:6.0.8:dev'  // adds buildcraft to the dev env
-    //compile 'com.googlecode.efficient-java-matrix-library:ejml:0.24' // adds ejml to the dev env
+    testCompile "junit:junit:4.11"
+}
 
-    // the 'provided' configuration is for optional dependencies that exist at compile-time but might not at runtime.
-    //provided 'com.mod-buildcraft:buildcraft:6.0.8:dev'
-
-    // the deobf configurations:  'deobfCompile' and 'deobfProvided' are the same as the normal compile and provided,
-    // except that these dependencies get remapped to your current MCP mappings
-    //deobfCompile 'com.mod-buildcraft:buildcraft:6.0.8:dev'
-    //deobfProvided 'com.mod-buildcraft:buildcraft:6.0.8:dev'
-
-    // for more info...
-    // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
-    // http://www.gradle.org/docs/current/userguide/dependency_management.html
-
+// configure  the source folders
+sourceSets {
+    // this builds everything into the main package
+    main {
+        java {
+            srcDir "src/java"
+        }
+        resources {
+            srcDir "src/resources"
+        }
+    }
+    api {
+        java {
+            srcDir project.growthcraftApi
+            //srcDir project.thaumcraftApi
+        }
+    }
 }
 
 processResources {
+    // this will ensure that this task is redone when the versions change.
     inputs.property "version", project.version
     inputs.property "mcversion", project.minecraft.version
+
+    // replace stuff in mcmod.info, nothing else
     from(sourceSets.main.resources.srcDirs) {
-        include 'mcmod.info'
-        expand 'version':project.version, 'mcversion':project.minecraft.version
+        include "mcmod.info"
+
+        expand "version":project.version, "mcversion":project.minecraft.version
     }
+
+    // copy everything else, thats not the mcmod.info
     from(sourceSets.main.resources.srcDirs) {
         exclude 'mcmod.info'
     }
 }
+
+tasks.withType(JavaCompile) {
+    options.compilerArgs += ["-Xlint:all", "-Xlint:deprecation", "-Xlint:-rawtypes", "-Xlint:-unchecked"]
+    options.deprecation = true
+    options.encoding = "utf8"
+}
+
+runClient {
+    if( project.hasProperty("mcUsername") && project.hasProperty("mcPassword") ) {
+        args "--username=${project.mcUsername}"
+        args "--password=${project.mcPassword}"
+    }
+}
+
+javadoc {
+    // add api classes to javadoc
+    source += sourceSets.api.allSource
+    // exclude 3rd party apis from the javadoc
+    exclude project.thaumcraftApiExclusionPattern
+
+    failOnError = false
+}
+
+/*
+// add a javadoc jar
+task javadocJar(type: Jar, dependsOn: javadoc) {
+    classifier = "javadoc"
+    from "build/docs/javadoc"
+}
+
+// because the normal output has been made to be obfuscated
+task deobfJar(type: Jar) {
+    from sourceSets.main.output
+    from(sourceSets.api.output) {
+        exclude project.thaumcraftApiExclusionPattern
+    }
+    classifier = "dev"
+}
+
+task apiJar(type: Jar) {
+    from(sourceSets.api.output) {
+        exclude project.thaumcraftApiExclusionPattern
+    }
+    classifier = "api"
+}
+
+jar {
+    classifier = "bundle"
+
+    // add api classes to main package
+    from(sourceSets.api.output) {
+        exclude project.thaumcraftApiExclusionPattern
+    }
+
+    // Only include the thaumcraft LICENSE
+    into("thaumcraft/api") {
+        from project.thaumcraftApi + "/LICENSE"
+    }
+}
+
+// make sure all of these happen when we run build
+build.dependsOn sourceJar, javadocJar, deobfJar, apiJar
+*/

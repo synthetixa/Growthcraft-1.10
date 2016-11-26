@@ -1,0 +1,6 @@
+{
+  "parent": "block/cube",
+  "textures": {
+    "all": "growthcraft-core:blocks/rope_0"
+  }
+}
